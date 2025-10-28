@@ -1,0 +1,9 @@
+terms:
+  - term: SKU
+    definition: "Уникальный код товара (Stock Keeping Unit)"
+  - term: DWH
+    definition: "Хранилище данных (Data Warehouse)"
+  - term: ETL
+    definition: "Процесс загрузки данных: Extract, Transform, Load"
+  - term: KPI
+    definition: "Ключевой показатель эффективности (Key Performance Indicator)"

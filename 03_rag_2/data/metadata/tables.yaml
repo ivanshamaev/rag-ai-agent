@@ -1,0 +1,32 @@
+tables:
+  - name: dim_products
+    description: "Справочник товаров."
+    fields:
+      - name: product_id
+        type: int
+        description: "Уникальный идентификатор товара"
+      - name: product_name
+        type: varchar
+        description: "Название товара"
+      - name: product_group
+        type: varchar
+        description: "Группа товаров"
+
+  - name: fact_stock_movements
+    description: "Факт движения товаров по складам."
+    fields:
+      - name: movement_id
+        type: int
+        description: "Идентификатор операции"
+      - name: product_id
+        type: int
+        description: "Ключ на dim_products"
+      - name: warehouse_id
+        type: int
+        description: "Ключ на dim_warehouses"
+      - name: quantity
+        type: decimal
+        description: "Количество единиц"
+      - name: movement_type
+        type: varchar
+        description: "Тип движения — 'IN', 'OUT' или 'TRANSFER'"

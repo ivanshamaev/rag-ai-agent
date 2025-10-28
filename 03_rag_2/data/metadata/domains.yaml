@@ -1,0 +1,10 @@
+domain:
+  name: warehouse_management
+  description: >
+    Домен отвечает за движение товаров по складам, учёт остатков,
+    перемещения между складами и поступления от поставщиков.
+  kpis:
+    - name: stock_turnover
+      description: Оборот товара на складе, рассчитывается как отношение объёма продаж к среднему остатку.
+    - name: warehouse_utilization
+      description: Заполненность склада в процентах.

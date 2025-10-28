@@ -1,0 +1,10 @@
+relations:
+  - from_table: fact_stock_movements
+    to_table: dim_products
+    type: many-to-one
+    join_condition: fact_stock_movements.product_id = dim_products.product_id
+
+  - from_table: fact_stock_movements
+    to_table: dim_warehouses
+    type: many-to-one
+    join_condition: fact_stock_movements.warehouse_id = dim_warehouses.warehouse_id

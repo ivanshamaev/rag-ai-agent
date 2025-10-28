@@ -1,53 +1,50 @@
+## 🚀 Цель апгрейда
 
-## 🚀 Цель
+Добавить новые источники знаний для RAG, чтобы агент мог отвечать не только:
 
-Создадим минимальную рабочую версию RAG, которая:
-
-* Подгружает YAML-описание таблиц;
-* Создаёт текстовые "часы" (chunks);
-* Индексирует их в **векторной БД** (используем **Chroma** — просто, локально, без интернета);
-* Позволяет задавать вопросы, на которые агент отвечает с учётом контекста таблиц;
-* Использует **OpenRouter LLM API** для генерации ответов.
+* какие поля есть в таблице,
+  но и:
+* как таблицы связаны,
+* как формируются факты и измерения,
+* что делают SQL-процедуры,
+* где используется конкретное поле,
+* как написать запрос на нужный отчёт.
 
 ---
 
-## 📁 Структура проекта
+## 🧩 Новая структура проекта
 
 ```
 rag_dwh_agent/
 ├── data/
-│   └── tables.yaml               # описание таблиц и связей
-├── embeddings/                   # векторное хранилище (создаётся автоматически)
+│   ├── metadata/
+│   │   ├── tables.yaml              # описание таблиц и полей
+│   │   ├── relations.yaml           # связи между таблицами
+│   │   └── domains.yaml             # описание бизнес-домена
+│   ├── sql/
+│   │   ├── fact_stock_load.sql      # процедура загрузки фактов
+│   │   ├── dim_products_load.sql    # процедура загрузки измерения
+│   │   └── views/
+│   │       └── v_stock_summary.sql  # представление отчёта
+│   └── glossary.yaml                # бизнес-термины и их определения
+├── embeddings/
 ├── src/
-│   ├── loader.py                 # загрузка YAML
-│   ├── embedder.py               # создание эмбеддингов
-│   ├── retriever.py              # поиск релевантных контекстов
-│   ├── rag_agent.py              # основная логика RAG
-│   └── main.py                   # CLI-интерфейс
-├── .env                          # хранит OPENROUTER_API_KEY
+│   ├── loader.py
+│   ├── embedder.py
+│   ├── retriever.py
+│   ├── rag_agent.py
+│   └── main.py
 └── requirements.txt
 ```
 
 ---
 
-## 📦 requirements.txt
-
-```txt
-openai>=1.30.0
-chromadb>=0.5.0
-pyyaml
-python-dotenv
-tqdm
-```
-
----
-
-## 📄 data/tables.yaml (пример)
+## 🧠 1. `tables.yaml` — метаданные таблиц
 
 ```yaml
 tables:
-  - name: products
-    description: Справочник товаров. Содержит информацию о номенклатуре и кодах.
+  - name: dim_products
+    description: Справочник товаров.
     fields:
       - name: product_id
         type: int
@@ -55,214 +52,201 @@ tables:
       - name: product_name
         type: varchar
         description: Название товара
-
-  - name: warehouses
-    description: Справочник складов.
-    fields:
-      - name: warehouse_id
-        type: int
-        description: Уникальный идентификатор склада
-      - name: warehouse_name
+      - name: product_group
         type: varchar
-        description: Название склада
-
-  - name: stock_movements
-    description: Факт движения товаров между складами.
+        description: Группа товаров
+  - name: fact_stock_movements
+    description: Факт движения товаров по складам.
     fields:
       - name: movement_id
         type: int
         description: Идентификатор операции
       - name: product_id
         type: int
-        description: Идентификатор товара
+        description: Ключ на dim_products
       - name: warehouse_id
         type: int
-        description: Идентификатор склада
-      - name: movement_date
-        type: datetime
-        description: Дата перемещения
+        description: Ключ на dim_warehouses
       - name: quantity
-        type: float
-        description: Количество перемещённого товара
+        type: decimal
+        description: Количество единиц
+      - name: movement_type
+        type: varchar
+        description: Тип движения: 'IN', 'OUT', 'TRANSFER'
 ```
 
 ---
 
-## 📄 src/loader.py
+## 🔗 2. `relations.yaml` — связи между таблицами
+
+```yaml
+relations:
+  - from_table: fact_stock_movements
+    to_table: dim_products
+    type: many-to-one
+    join_condition: fact_stock_movements.product_id = dim_products.product_id
+
+  - from_table: fact_stock_movements
+    to_table: dim_warehouses
+    type: many-to-one
+    join_condition: fact_stock_movements.warehouse_id = dim_warehouses.warehouse_id
+```
+
+---
+
+## 📊 3. `domains.yaml` — описание бизнес-домена
+
+```yaml
+domain:
+  name: warehouse_management
+  description: >
+    Домен отвечает за движение товаров по складам, учёт остатков,
+    перемещения между складами и поступления от поставщиков.
+  kpis:
+    - name: stock_turnover
+      description: Оборот товара на складе, рассчитывается как отношение объёма продаж к среднему остатку.
+    - name: warehouse_utilization
+      description: Заполненность склада в процентах.
+```
+
+---
+
+## 🧱 4. SQL-процедуры (`sql/fact_stock_load.sql`)
+
+```sql
+CREATE PROCEDURE load_fact_stock_movements AS
+BEGIN
+    INSERT INTO fact_stock_movements (movement_id, product_id, warehouse_id, quantity, movement_type)
+    SELECT 
+        src.movement_id,
+        src.product_id,
+        src.warehouse_id,
+        src.quantity,
+        CASE
+            WHEN src.quantity > 0 THEN 'IN'
+            WHEN src.quantity < 0 THEN 'OUT'
+            ELSE 'TRANSFER'
+        END
+    FROM staging.stock_movements src;
+END;
+```
+
+---
+
+## 📘 5. `glossary.yaml` — словарь бизнес-терминов
+
+```yaml
+terms:
+  - term: SKU
+    definition: Уникальный код товара (Stock Keeping Unit)
+  - term: DWH
+    definition: Хранилище данных (Data Warehouse)
+  - term: ETL
+    definition: Процесс загрузки данных: Extract, Transform, Load
+```
+
+---
+
+## 🧩 Обновим `loader.py`
+
+Теперь он объединяет всё в единый текстовый корпус для RAG.
 
 ```python
-import yaml
+import yaml, os, glob
 
-def load_yaml_data(path: str):
+def load_yaml_data(path):
     with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    tables = data.get("tables", [])
-    chunks = []
-    for table in tables:
+        return yaml.safe_load(f)
+
+def load_text_files(directory):
+    texts = []
+    for path in glob.glob(os.path.join(directory, "**/*.sql"), recursive=True):
+        with open(path, "r", encoding="utf-8") as f:
+            texts.append(f"-- Файл {os.path.basename(path)}\n" + f.read())
+    return texts
+
+def build_corpus(base_path="data"):
+    corpus = []
+
+    # Таблицы
+    tables_yaml = load_yaml_data(os.path.join(base_path, "metadata/tables.yaml"))
+    for table in tables_yaml.get("tables", []):
         text = f"Таблица {table['name']}: {table['description']}\n"
-        for field in table["fields"]:
-            text += f"- {field['name']} ({field['type']}): {field['description']}\n"
-        chunks.append(text)
-    return chunks
+        for f in table["fields"]:
+            text += f"- {f['name']} ({f['type']}): {f['description']}\n"
+        corpus.append(text)
+
+    # Связи
+    relations_yaml = load_yaml_data(os.path.join(base_path, "metadata/relations.yaml"))
+    for rel in relations_yaml.get("relations", []):
+        corpus.append(
+            f"Связь: {rel['from_table']} -> {rel['to_table']} по {rel['join_condition']} ({rel['type']})"
+        )
+
+    # Домен
+    domain_yaml = load_yaml_data(os.path.join(base_path, "metadata/domains.yaml"))
+    corpus.append(
+        f"Домен: {domain_yaml['domain']['name']} — {domain_yaml['domain']['description']}"
+    )
+
+    # Термины
+    glossary = load_yaml_data(os.path.join(base_path, "glossary.yaml"))
+    for term in glossary.get("terms", []):
+        corpus.append(f"Термин {term['term']}: {term['definition']}")
+
+    # SQL-файлы
+    sql_texts = load_text_files(os.path.join(base_path, "sql"))
+    corpus.extend(sql_texts)
+
+    return corpus
 ```
 
 ---
 
-## 📄 src/embedder.py
+## ⚙️ Использование в `main.py`
+
+Заменяем строку:
 
 ```python
-import chromadb
-from chromadb.utils import embedding_functions
-
-def create_chroma_db(chunks, persist_dir="embeddings"):
-    client = chromadb.PersistentClient(path=persist_dir)
-    openai_ef = embedding_functions.OpenAIEmbeddingFunction(
-        api_key=None,  # chroma возьмёт OPENAI_API_KEY из окружения, но мы используем OpenRouter → пропустим
-        model_name="text-embedding-3-small"
-    )
-    collection = client.get_or_create_collection(
-        name="tables", embedding_function=openai_ef
-    )
-    for i, chunk in enumerate(chunks):
-        collection.add(documents=[chunk], ids=[str(i)])
-    return collection
+chunks = load_yaml_data("data/tables.yaml")
 ```
 
-> ⚠️ Поскольку OpenRouter не предоставляет embeddings напрямую, для MVP можно использовать встроенный эмбеддер Chroma (он сам fallback-ит на `all-MiniLM-L6-v2`, если OpenAI embeddings недоступны).
-
----
-
-## 📄 src/retriever.py
+на:
 
 ```python
-def retrieve_context(query, collection, top_k=3):
-    results = collection.query(query_texts=[query], n_results=top_k)
-    return results["documents"][0]
+from loader import build_corpus
+chunks = build_corpus("data")
 ```
 
 ---
 
-## 📄 src/rag_agent.py
+## 💬 Теперь RAG может отвечать на вопросы вроде:
 
-```python
-from openai import OpenAI
-
-def ask_rag(query, context, api_key):
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-    )
-
-    system_prompt = (
-        "Ты — эксперт по DWH и складским данным. "
-        "Используй приведённый контекст таблиц для ответа на вопрос. "
-        "Отвечай понятно и структурированно.\n\n"
-        f"Контекст:\n{context}\n"
-    )
-
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query}
-        ],
-    )
-
-    return completion.choices[0].message.content
+```
+❓ Что делает процедура load_fact_stock_movements?
+❓ Как связаны таблицы dim_products и fact_stock_movements?
+❓ Что такое KPI stock_turnover?
+❓ Из какой таблицы берётся поле warehouse_id?
+❓ Напиши SQL-запрос, который покажет оборот товара по складам.
 ```
 
 ---
 
-## 📄 src/main.py
+## 💡 Следующий шаг (если хочешь развивать дальше)
 
-```python
-import os
-from dotenv import load_dotenv
-from loader import load_yaml_data
-from embedder import create_chroma_db
-from retriever import retrieve_context
-from rag_agent import ask_rag
+Можно добавить **“semantic search” по типу контента**, например:
 
-def main():
-    load_dotenv()
-    api_key = os.getenv("OPENROUTER_API_KEY")
+* искать только по SQL-кодам,
+* искать только по описаниям таблиц,
+* или комбинировать источники с весами (SQL = 0.7, YAML = 0.3).
 
-    print("🔹 Загружаем данные...")
-    chunks = load_yaml_data("data/tables.yaml")
-    collection = create_chroma_db(chunks)
 
-    while True:
-        query = input("\n❓ Вопрос: ")
-        if query.lower() in ["exit", "quit"]:
-            break
+## 🧠 Проверка вручную
 
-        context = "\n\n".join(retrieve_context(query, collection))
-        answer = ask_rag(query, context, api_key)
-
-        print("\n💬 Ответ:")
-        print(answer)
-
-if __name__ == "__main__":
-    main()
-```
-
----
-
-## 📄 .env
-
-```env
-OPENROUTER_API_KEY=sk-or-ваш-ключ
-```
-
----
-
-## ▶️ Запуск
+Ты можешь протестировать файл командой:
 
 ```bash
-pip install -r requirements.txt
-python src/main.py
+python -c "import yaml; print(yaml.safe_load(open('data/metadata/tables.yaml')))"
+python -c "import yaml; print(yaml.safe_load(open('data/glossary.yaml')))"
 ```
-
-Примеры запросов:
-
-```
-❓ Какие поля есть в таблице stock_movements?
-❓ Как связаны таблицы products и stock_movements?
-❓ Напиши пример SQL-запроса, чтобы получить все движения по конкретному складу.
-```
-
----
-
-## ✅ Что это даст
-
-* Ты получишь полностью рабочий **RAG-пайплайн** с YAML-данными;
-* Можно расширить данные, добавить SQL-файлы, описания процедур;
-* При желании заменить Chroma на Qdrant или FAISS.
-
-✅ Рекомендую для твоего проекта
-
-Поскольку ты строишь корпоративный RAG (и дальше будет интеграция с внутренними данными),
-лучше использовать SentenceTransformer — он бесплатный, офлайн и устойчивый.
-
-#### 📄 src/embedder.py (обновлённый)
-
-```python
-import chromadb
-from chromadb.utils import embedding_functions
-
-def create_chroma_db(chunks, persist_dir="embeddings"):
-    client = chromadb.PersistentClient(path=persist_dir)
-    sentence_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
-    )
-    collection = client.get_or_create_collection(
-        name="tables", embedding_function=sentence_ef
-    )
-    for i, chunk in enumerate(chunks):
-        collection.add(documents=[chunk], ids=[str(i)])
-    return collection
-```
-
-🔹 Это создаст embeddings **локально**, без внешнего API,
-что идеально подходит для офлайн / корпоративной среды.
 

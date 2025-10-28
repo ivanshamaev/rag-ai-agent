@@ -1,0 +1,6 @@
+openai>=1.30.0
+chromadb>=0.5.0
+pyyaml
+python-dotenv
+tqdm
+sentence_transformers

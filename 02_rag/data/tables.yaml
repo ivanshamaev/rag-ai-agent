@@ -1,0 +1,39 @@
+tables:
+  - name: products
+    description: Справочник товаров. Содержит информацию о номенклатуре и кодах.
+    fields:
+      - name: product_id
+        type: int
+        description: Уникальный идентификатор товара
+      - name: product_name
+        type: varchar
+        description: Название товара
+
+  - name: warehouses
+    description: Справочник складов.
+    fields:
+      - name: warehouse_id
+        type: int
+        description: Уникальный идентификатор склада
+      - name: warehouse_name
+        type: varchar
+        description: Название склада
+
+  - name: stock_movements
+    description: Факт движения товаров между складами.
+    fields:
+      - name: movement_id
+        type: int
+        description: Идентификатор операции
+      - name: product_id
+        type: int
+        description: Идентификатор товара
+      - name: warehouse_id
+        type: int
+        description: Идентификатор склада
+      - name: movement_date
+        type: datetime
+        description: Дата перемещения
+      - name: quantity
+        type: float
+        description: Количество перемещённого товара
